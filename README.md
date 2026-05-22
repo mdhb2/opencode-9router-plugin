@@ -144,3 +144,6 @@ Do not hardcode model lists. The plugin discovers them dynamically at startup.
 - If models are empty, verify that your 9router endpoint is running and `/models` is reachable.
 - If you see `Missing API Key`, set `OPENCODE_9ROUTER_API_KEY` and restart opencode.
 - If you previously used a local development copy, remove duplicate local entries such as `./plugins/opencode-9router.ts` before switching to the npm package.
+
+## Github Repository
+https://github.com/mdhb2/opencode-9router-plugin
