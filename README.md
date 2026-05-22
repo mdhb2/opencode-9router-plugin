@@ -1,6 +1,6 @@
 # Opencode 9Router Plugin
 
-![Preview plugin](https://unpkg.com/opencode-9router-plugin@latest/assets/images/cover2.png)
+![Preview plugin](./assets/images/cover2.png)` 
 
 Dynamic 9router provider plugin for [opencode](https://opencode.ai/).
 
