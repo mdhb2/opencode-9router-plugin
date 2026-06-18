@@ -6,6 +6,7 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { getCacheAge } from "./cache.js";
 
 const PACKAGE_NAME = "opencode-9router-plugin";
 const DEFAULT_CONFIG = { $schema: "https://opencode.ai/config.json" };
@@ -292,6 +293,16 @@ async function check(args: Args): Promise<void> {
   } else {
     const stderr = result.stderr?.trim() || "command failed or opencode is not on PATH";
     console.log(`opencode models 9router: failed - ${stderr}`);
+  }
+
+  // models.dev cache status
+  const cache = await getCacheAge();
+  if (cache.exists && cache.ageMs !== undefined) {
+    const hours = Math.floor(cache.ageMs / (1000 * 60 * 60));
+    const minutes = Math.floor((cache.ageMs % (1000 * 60 * 60)) / (1000 * 60));
+    console.log(`models.dev cache: present (${hours}h${minutes}m old, TTL 24h)`);
+  } else {
+    console.log("models.dev cache: not found (will fetch on startup)");
   }
 }
 

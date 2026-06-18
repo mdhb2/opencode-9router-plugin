@@ -1,4 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin";
+import { resolveModel } from "./model-mapper.js";
 
 type AnyCfg = Record<string, any>;
 
@@ -90,7 +91,9 @@ const plugin: Plugin = async () => {
 
       cfg.provider["9router"].models ||= {};
       for (const model of discoveredModels) {
-        cfg.provider["9router"].models[model] ||= {};
+        if (!cfg.provider["9router"].models[model]) {
+          cfg.provider["9router"].models[model] = await resolveModel(model);
+        }
       }
 
       if (!cfg.model && defaultModel) {
