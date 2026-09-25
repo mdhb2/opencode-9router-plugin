@@ -1,9 +1,29 @@
-import type { Plugin } from "@opencode-ai/plugin";
+import { Model, Plugin, Provider } from "@opencode/plugin";
 
 type AnyCfg = Record<string, any>;
 
+const PROVIDER_ID = "9router";
+const PROVIDER_NAME = "9Router";
+// v1 config `npm` field loads an AI SDK provider package; v2 uses `package` in Provider.Info.
+const PROVIDER_NPM_V1 = "@ai-sdk/openai-compatible";
+const PROVIDER_PACKAGE_V2 = "@opencode/ai/providers/openai-compatible";
+
 const DEFAULT_BASE = "http://localhost:20128/v1";
 const DEFAULT_TIMEOUT_MS = 5000;
+
+interface Discovery {
+  baseUrl: string;
+  apiKey: string;
+  models: string[];
+  defaultModel: string | null;
+}
+
+function readEnv(): { baseUrl: string; apiKey: string; timeoutMs: number } {
+  const baseUrl = process.env.OPENCODE_9ROUTER_URL || DEFAULT_BASE;
+  const apiKey = process.env.OPENCODE_9ROUTER_API_KEY || "";
+  const timeoutMs = Number(process.env.OPENCODE_9ROUTER_TIMEOUT_MS || DEFAULT_TIMEOUT_MS);
+  return { baseUrl, apiKey, timeoutMs };
+}
 
 function buildHeaders(apiKey: string): Record<string, string> {
   const headers: Record<string, string> = { Accept: "application/json" };
@@ -61,43 +81,90 @@ function pickDefaultModel(models: string[]): string | null {
   return models[0] ?? null;
 }
 
-const plugin: Plugin = async () => {
-  const baseUrl = process.env.OPENCODE_9ROUTER_URL || DEFAULT_BASE;
-  const apiKey = process.env.OPENCODE_9ROUTER_API_KEY || "";
-  const timeoutMs = Number(process.env.OPENCODE_9ROUTER_TIMEOUT_MS || DEFAULT_TIMEOUT_MS);
-
-  let discoveredModels: string[] = [];
-  let defaultModel: string | null = null;
-
+async function discover(): Promise<Discovery> {
+  const { baseUrl, apiKey, timeoutMs } = readEnv();
   try {
-    discoveredModels = await listModels(baseUrl, timeoutMs, apiKey);
-    defaultModel = pickDefaultModel(discoveredModels);
+    const models = await listModels(baseUrl, timeoutMs, apiKey);
+    return { baseUrl, apiKey, models, defaultModel: pickDefaultModel(models) };
   } catch (err) {
     console.warn("opencode-9router plugin: failed to discover models:", (err as any)?.message || err);
+    return { baseUrl, apiKey, models: [], defaultModel: null };
   }
+}
 
-  return {
-    config: async (cfg: AnyCfg) => {
-      cfg.provider ||= {};
-      cfg.provider["9router"] ||= {};
-      cfg.provider["9router"].npm ||= "@ai-sdk/openai-compatible";
-      cfg.provider["9router"].options ||= {};
-      cfg.provider["9router"].options.name ||= "9Router";
-      cfg.provider["9router"].options.baseURL ||= baseUrl;
-      if (apiKey && !cfg.provider["9router"].options.apiKey) {
-        cfg.provider["9router"].options.apiKey = apiKey;
-      }
+// Shared by both entrypoints: what each host version injects into the provider config.
+function providerOptions(d: Discovery): Record<string, any> {
+  const options: Record<string, any> = {
+    name: PROVIDER_NAME,
+    baseURL: d.baseUrl,
+  };
+  if (d.apiKey) options.apiKey = d.apiKey;
+  return options;
+}
 
-      cfg.provider["9router"].models ||= {};
-      for (const model of discoveredModels) {
-        cfg.provider["9router"].models[model] ||= {};
-      }
+export default {
+  // ---- OpenCode v2 entrypoint ----
+  ...Plugin.define({
+    id: PROVIDER_ID,
+    async setup(ctx) {
+      // Discovery runs BEFORE registering transforms: transforms must be
+      // synchronous, cheap and replayable (they capture this data in closure).
+      const discovery = await discover();
 
-      if (!cfg.model && defaultModel) {
-        cfg.model = `9router/${defaultModel}`;
+      const providerID = Provider.ID.make(PROVIDER_ID);
+      const models = discovery.models.map((id) => ({
+        ...Model.Info.default(providerID, Model.ID.make(id)),
+      }));
+
+      await ctx.provider.transform((editor) => {
+        editor.add({
+          info: {
+            ...Provider.Info.empty(providerID),
+            name: PROVIDER_NAME,
+            activation: "enabled",
+            package: PROVIDER_PACKAGE_V2,
+            settings: providerOptions(discovery),
+          },
+          models,
+        });
+      });
+
+      if (discovery.defaultModel) {
+        const defaultModel = discovery.defaultModel;
+        await ctx.model.transform((editor) => {
+          // Only set a default when the user has not chosen one.
+          if (!editor.default.get()) {
+            editor.default.set(providerID, Model.ID.make(defaultModel));
+          }
+        });
       }
     },
-  };
-};
+  }),
 
-export default plugin;
+  // ---- OpenCode v1 entrypoint (supported since 1.18.29) ----
+  async server() {
+    const discovery = await discover();
+
+    return {
+      config: async (cfg: AnyCfg) => {
+        cfg.provider ||= {};
+        cfg.provider[PROVIDER_ID] ||= {};
+        cfg.provider[PROVIDER_ID].npm ||= PROVIDER_NPM_V1;
+        const options = providerOptions(discovery);
+        cfg.provider[PROVIDER_ID].options ||= {};
+        for (const [key, value] of Object.entries(options)) {
+          cfg.provider[PROVIDER_ID].options[key] ??= value;
+        }
+
+        cfg.provider[PROVIDER_ID].models ||= {};
+        for (const model of discovery.models) {
+          cfg.provider[PROVIDER_ID].models[model] ||= {};
+        }
+
+        if (!cfg.model && discovery.defaultModel) {
+          cfg.model = `${PROVIDER_ID}/${discovery.defaultModel}`;
+        }
+      },
+    };
+  },
+};

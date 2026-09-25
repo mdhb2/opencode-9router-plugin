@@ -1,7 +1,7 @@
 {
   "name": "opencode-9router-plugin",
-  "version": "0.1.4",
-  "description": "Dynamic 9router provider plugin for opencode",
+  "version": "0.2.0",
+  "description": "Dynamic 9router provider plugin for opencode (v1 + v2 compatible)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -23,6 +23,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rimraf dist",
+    "mock": "node scripts/mock-9router.mjs",
     "prepublishOnly": "npm run clean && npm run build"
   },
   "keywords": [
@@ -33,11 +34,10 @@
   ],
   "author": "",
   "license": "MIT",
-  "peerDependencies": {
-    "@opencode-ai/plugin": ">=1.14.0"
+  "dependencies": {
+    "@opencode/plugin": "^2.0.16"
   },
   "devDependencies": {
-    "@opencode-ai/plugin": "^1.14.48",
     "@types/node": "^24.10.1",
     "rimraf": "^6.1.0",
     "typescript": "^5.8.2"
